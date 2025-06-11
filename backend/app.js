@@ -21,4 +21,8 @@ if (!fs.existsSync("uploads")) {
 app.use("/api/auth", authRoutes);
 app.use("/api/invoices", invoiceRoutes);
 
+app.get("/health", (req, res) => {
+  res.send("OK");
+});
+
 module.exports = app;
