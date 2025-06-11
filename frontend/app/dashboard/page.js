@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import axios from "axios";
 import { useAuth } from "@/context/AuthContext";
+import { io } from "socket.io-client";
 
 export default function Dashboard() {
-  // --- State Management ---
   const [invoices, setInvoices] = useState([]);
   const [customerName, setCustomerName] = useState("");
   const [amount, setAmount] = useState("");
@@ -14,139 +14,103 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const { user, logout } = useAuth(); // Destructure user and logout from AuthContext
-  const router = useRouter(); // Initialize Next.js router
+  const { user, logout } = useAuth();
+  const router = useRouter();
 
-  // --- API Base URL ---
-  const API_BASE_URL = "http://localhost:5000/api"; // Define API base URL for easier management
+  const API_BASE_URL = "http://localhost:5000/api";
 
-  // --- Fetch Invoices Function ---
-  // Using useCallback to memoize the function and prevent unnecessary re-renders
-  const fetchInvoices = useCallback(async () => {
-    // Only fetch if user is authenticated
-    if (!user) {
-      return;
-    }
-    try {
-      // Include authorization header
-      const token = localStorage.getItem("token"); // Get token from local storage
-      const response = await axios.get(`${API_BASE_URL}/invoices`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      setInvoices(response.data.invoices);
-    } catch (err) {
-      console.error("Failed to fetch invoices:", err);
-      // Handle unauthorized access or token expiry
-      if (
-        err.response &&
-        (err.response.status === 401 || err.response.status === 403)
-      ) {
-        logout(); // Log out the user if token is invalid or expired
-        router.push("/login");
-      }
-      setError("Failed to load invoices. Please try again.");
-    }
-  }, [user, logout, router]); // Dependencies for useCallback
-
-  // --- Polling for Invoice Status ---
-  const pollInvoiceStatus = useCallback((invoiceId) => {
-    // This immediately stops any previous polling for the same invoice
-    // if a new poll request is made (though unlikely for a single new invoice)
-    const interval = setInterval(async () => {
-      try {
-        const token = localStorage.getItem("token");
-        const response = await axios.get(
-          `${API_BASE_URL}/invoices/${invoiceId}/status`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
-
-        if (response.data.status === "completed") {
-          // Update the specific invoice in the state
-          setInvoices((prev) =>
-            prev.map((invoice) =>
-              invoice._id === invoiceId
-                ? {
-                    ...invoice,
-                    status: "completed",
-                    pdfPath: response.data.pdfPath,
-                  }
-                : invoice
-            )
-          );
-          clearInterval(interval); // Stop polling once completed
-        }
-      } catch (err) {
-        console.error(`Failed to check status for invoice ${invoiceId}:`, err);
-        clearInterval(interval); // Stop polling on error
-      }
-    }, 2000); // Poll every 2 seconds
-
-    // Stop polling after 30 seconds to prevent infinite loops for failed generations
-    // It's good to have a safeguard, but robust error handling should be in place on backend too.
-    setTimeout(() => {
-      clearInterval(interval);
-      console.log(`Polling for invoice ${invoiceId} stopped after 30 seconds.`);
-    }, 30000);
-  }, []); // No dependencies that change here, so an empty array is fine.
-
-  // --- Effects ---
   useEffect(() => {
-    // Redirect unauthenticated users
     if (!user) {
       router.push("/login");
-      return; // Stop execution if no user
+      return;
     }
-    // Fetch invoices on component mount or when user/router changes
-    fetchInvoices();
-  }, [user, router, fetchInvoices]); // Add fetchInvoices to dependency array as it's a callback
 
-  // --- Form Submission Handler ---
+    const fetchInvoices = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const response = await axios.get(`${API_BASE_URL}/invoices`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        setInvoices(response.data.invoices);
+      } catch (err) {
+        console.error("Failed to fetch invoices:", err);
+        if (
+          err.response &&
+          (err.response.status === 401 || err.response.status === 403)
+        ) {
+          logout();
+          router.push("/login");
+        }
+        setError("Failed to load invoices. Please try again.");
+      }
+    };
+
+    fetchInvoices();
+
+    // Set up WebSocket connection
+    const socket = io("http://localhost:5000");
+
+    // Join user's room after connection
+    socket.on("connect", () => {
+      console.log("Connected to server");
+      socket.emit("join", user.id);
+    });
+
+    socket.on("invoiceStatusUpdate", (data) => {
+      console.log("Received invoice status update:", data);
+      setInvoices((prevInvoices) =>
+        prevInvoices.map((invoice) =>
+          invoice._id === data.invoiceId
+            ? { ...invoice, status: data.status, pdfPath: data.pdfPath }
+            : invoice
+        )
+      );
+    });
+
+    socket.on("disconnect", () => {
+      console.log("Disconnected from server");
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [user, router, logout]);
+
   const handleSubmit = async (e) => {
-    e.preventDefault(); // Prevent default form submission behavior
-    setError(""); // Clear previous errors
-    setLoading(true); // Set loading state
+    e.preventDefault();
+    setError("");
+    setLoading(true);
 
     try {
-      const token = localStorage.getItem("token"); // Retrieve token
+      const token = localStorage.getItem("token");
       const response = await axios.post(
         `${API_BASE_URL}/invoices`,
         {
           customerName,
-          amount: parseFloat(amount), // Ensure amount is a number
+          amount: parseFloat(amount),
           date,
         },
         {
           headers: {
-            Authorization: `Bearer ${token}`, // Include authorization header
+            Authorization: `Bearer ${token}`,
           },
         }
       );
 
-      // Add the newly created invoice to the list immediately
       const newInvoice = response.data.invoice;
       setInvoices((prev) => [newInvoice, ...prev]);
 
-      // Clear the form fields
       setCustomerName("");
       setAmount("");
       setDate("");
-
-      // Start polling for the PDF generation status
-      pollInvoiceStatus(newInvoice._id);
     } catch (err) {
       console.error("Error creating invoice:", err);
-      // Display a user-friendly error message
       setError(
         err.response?.data?.message ||
           "Failed to create invoice. Please check your input."
       );
-      // Handle unauthorized access or token expiry
       if (
         err.response &&
         (err.response.status === 401 || err.response.status === 403)
@@ -155,40 +119,36 @@ export default function Dashboard() {
         router.push("/login");
       }
     } finally {
-      setLoading(false); // Reset loading state
+      setLoading(false);
     }
   };
 
-  // --- Download Invoice Handler ---
   const downloadInvoice = async (invoiceId) => {
     try {
       const token = localStorage.getItem("token");
       const response = await axios.get(
         `${API_BASE_URL}/invoices/${invoiceId}/download`,
         {
-          responseType: "blob", // Important for downloading files
+          responseType: "blob",
           headers: {
             Authorization: `Bearer ${token}`,
           },
         }
       );
 
-      // Create a temporary URL for the blob and trigger download
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement("a");
       link.href = url;
-      // You might want to get the actual filename from response headers if available
       link.setAttribute("download", `invoice-${invoiceId}.pdf`);
       document.body.appendChild(link);
       link.click();
-      link.remove(); // Clean up the temporary link
-      window.URL.revokeObjectURL(url); // Clean up the object URL
+      link.remove();
+      window.URL.revokeObjectURL(url);
     } catch (err) {
       console.error("Failed to download invoice:", err);
       setError(
         "Failed to download invoice. It might not be ready or an error occurred."
       );
-      // Handle unauthorized access or token expiry
       if (
         err.response &&
         (err.response.status === 401 || err.response.status === 403)
@@ -199,13 +159,11 @@ export default function Dashboard() {
     }
   };
 
-  // --- Logout Handler ---
   const handleLogout = () => {
-    logout(); // Call logout function from AuthContext
-    router.push("/login"); // Redirect to login page
+    logout();
+    router.push("/login");
   };
 
-  // --- Loading State for initial user check ---
   if (!user) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50">
@@ -214,10 +172,8 @@ export default function Dashboard() {
     );
   }
 
-  // --- Rendered Component ---
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Navigation Bar */}
       <nav className="bg-white shadow">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
@@ -241,7 +197,6 @@ export default function Dashboard() {
         </div>
       </nav>
 
-      {/* Main Content Area */}
       <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
         <div className="px-4 py-6 sm:px-0">
           <div className="border-4 border-dashed border-gray-200 rounded-lg p-8 bg-white shadow-md">
@@ -249,7 +204,6 @@ export default function Dashboard() {
               Create New Invoice
             </h2>
 
-            {/* Error Message Display */}
             {error && (
               <div
                 className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4"
@@ -259,7 +213,6 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* Invoice Creation Form */}
             <form onSubmit={handleSubmit} className="space-y-4 mb-8">
               <div>
                 <label
@@ -287,7 +240,7 @@ export default function Dashboard() {
                 <input
                   type="number"
                   id="amount"
-                  step="0.01" // Allows decimal values
+                  step="0.01"
                   required
                   className="mt-1 block w-full text-black px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition duration-150 ease-in-out"
                   value={amount}
@@ -312,14 +265,13 @@ export default function Dashboard() {
               </div>
               <button
                 type="submit"
-                disabled={loading} // Disable button when loading
+                disabled={loading}
                 className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition duration-150 ease-in-out"
               >
                 {loading ? "Generating..." : "Generate Invoice"}
               </button>
             </form>
 
-            {/* Your Invoices List */}
             <h2 className="text-2xl font-bold mb-6 text-gray-800">
               Your Invoices
             </h2>
@@ -373,7 +325,7 @@ export default function Dashboard() {
                             <button
                               onClick={() => downloadInvoice(invoice._id)}
                               className="inline-flex items-center px-4 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition duration-150 ease-in-out"
-                              disabled={!invoice.pdfPath} // Disable download if no PDF path
+                              disabled={!invoice.pdfPath}
                             >
                               Download PDF
                             </button>

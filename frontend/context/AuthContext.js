@@ -8,7 +8,7 @@ const AuthContext = createContext();
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error("useAuth must be used within an AuthProvider");
+    throw new Error("useAuth must be used with an AuthProvider");
   }
   return context;
 };
@@ -34,6 +34,8 @@ export const AuthProvider = ({ children }) => {
       email,
       password,
     });
+
+    console.log("Login response:", response.data);
 
     const { token, user } = response.data;
     localStorage.setItem("token", token);
