@@ -2,8 +2,14 @@ const express = require("express");
 const router = express.Router();
 const invoiceController = require("../controller/invoiceController");
 const authenticateToken = require("../middleware/authMiddleware");
+const pdfRateLimit = require("../middleware/rateLimitMiddleware");
 
-router.post("/", authenticateToken, invoiceController.createInvoice);
+router.post(
+  "/",
+  authenticateToken,
+  pdfRateLimit,
+  invoiceController.createInvoice
+);
 router.get("/", authenticateToken, invoiceController.getUserInvoices);
 router.get(
   "/:id/status",

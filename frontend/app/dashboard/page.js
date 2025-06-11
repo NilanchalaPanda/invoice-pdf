@@ -17,8 +17,6 @@ export default function Dashboard() {
   const { user, logout } = useAuth();
   const router = useRouter();
 
-  const API_BASE_URL = "http://localhost:5000/api";
-
   useEffect(() => {
     if (!user) {
       router.push("/login");
@@ -28,11 +26,14 @@ export default function Dashboard() {
     const fetchInvoices = async () => {
       try {
         const token = localStorage.getItem("token");
-        const response = await axios.get(`${API_BASE_URL}/invoices`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
+        const response = await axios.get(
+          `${process.env.NEXT_PUBLIC_PROD_API_BASE_URL}/api/invoices`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
         setInvoices(response.data.invoices);
       } catch (err) {
         console.error("Failed to fetch invoices:", err);
@@ -50,7 +51,7 @@ export default function Dashboard() {
     fetchInvoices();
 
     // Set up WebSocket connection
-    const socket = io("http://localhost:5000");
+    const socket = io(`${process.env.NEXT_PUBLIC_PROD_API_BASE_URL}`);
 
     // Join user's room after connection
     socket.on("connect", () => {
@@ -86,7 +87,7 @@ export default function Dashboard() {
     try {
       const token = localStorage.getItem("token");
       const response = await axios.post(
-        `${API_BASE_URL}/invoices`,
+        `${process.env.NEXT_PUBLIC_PROD_API_BASE_URL}/api/invoices`,
         {
           customerName,
           amount: parseFloat(amount),
@@ -101,10 +102,6 @@ export default function Dashboard() {
 
       const newInvoice = response.data.invoice;
       setInvoices((prev) => [newInvoice, ...prev]);
-
-      setCustomerName("");
-      setAmount("");
-      setDate("");
     } catch (err) {
       console.error("Error creating invoice:", err);
       setError(
@@ -119,6 +116,9 @@ export default function Dashboard() {
         router.push("/login");
       }
     } finally {
+      setCustomerName("");
+      setAmount("");
+      setDate("");
       setLoading(false);
     }
   };
@@ -127,7 +127,7 @@ export default function Dashboard() {
     try {
       const token = localStorage.getItem("token");
       const response = await axios.get(
-        `${API_BASE_URL}/invoices/${invoiceId}/download`,
+        `${process.env.NEXT_PUBLIC_PROD_API_BASE_URL}/api/invoices/${invoiceId}/download`,
         {
           responseType: "blob",
           headers: {
@@ -276,7 +276,7 @@ export default function Dashboard() {
               Your Invoices
             </h2>
 
-            <div className="bg-white shadow overflow-hidden sm:rounded-md">
+            <div className="bg-white shadow overflow-hidden sm:rounded-md max-h-96 overflow-y-auto scrollbar-none">
               <ul className="divide-y divide-gray-200">
                 {invoices.length === 0 ? (
                   <li className="px-4 py-6 text-center text-gray-500">

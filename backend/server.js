@@ -2,6 +2,8 @@
 const http = require("http");
 const app = require("./app");
 const { initializeSocket } = require("./utils/socketManager");
+// Add this to your main app.js or server.js
+require("./utils/gracefulShutdown");
 
 const connectDB = require("./config/db");
 const { PORT } = require("./config/constants");

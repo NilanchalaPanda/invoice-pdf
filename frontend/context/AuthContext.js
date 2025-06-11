@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
 import axios from "axios";
@@ -30,12 +30,13 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const login = async (email, password) => {
-    const response = await axios.post("http://localhost:5000/api/auth/login", {
-      email,
-      password,
-    });
-
-    console.log("Login response:", response.data);
+    const response = await axios.post(
+      `${process.env.NEXT_PUBLIC_PROD_API_BASE_URL}/api/auth/login`,
+      {
+        email,
+        password,
+      }
+    );
 
     const { token, user } = response.data;
     localStorage.setItem("token", token);
@@ -48,7 +49,7 @@ export const AuthProvider = ({ children }) => {
 
   const register = async (name, email, password) => {
     const response = await axios.post(
-      "http://localhost:5000/api/auth/register",
+      `${process.env.NEXT_PUBLIC_PROD_API_BASE_URL}/api/auth/register`,
       {
         name,
         email,

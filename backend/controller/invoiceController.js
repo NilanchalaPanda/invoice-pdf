@@ -1,58 +1,26 @@
 const Invoice = require("../models/Invoice");
 const generatePDF = require("../utils/pdfGenerator");
-const { io } = require("../server");
+const pdfQueue = require("../utils/pdfQueue");
 const { getIO } = require("../utils/socketManager");
-
-// const createInvoice = async (req, res) => {
-//   try {
-//     const { customerName, amount, date } = req.body;
-//     const invoiceNumber = `INV-${Date.now()}`;
-
-//     const invoice = new Invoice({
-//       userId: req.user.userId,
-//       customerName,
-//       amount,
-//       date,
-//       invoiceNumber,
-//       status: "processing",
-//     });
-
-//     await invoice.save();
-
-//     // Return invoice immediately
-//     res.status(201).json({
-//       message: "Invoice created successfully",
-//       invoice: {
-//         _id: invoice._id,
-//         customerName: invoice.customerName,
-//         amount: invoice.amount,
-//         date: invoice.date,
-//         invoiceNumber: invoice.invoiceNumber,
-//         status: invoice.status,
-//       },
-//     });
-
-//     // Generate PDF in background
-//     setTimeout(async () => {
-//       try {
-//         const filename = await generatePDF(invoice);
-//         await Invoice.findByIdAndUpdate(invoice._id, {
-//           status: "completed",
-//           pdfPath: filename,
-//         });
-//       } catch (error) {
-//         console.error("PDF generation failed:", error);
-//       }
-//     }, 2000); // Simulate processing time
-//   } catch (error) {
-//     res.status(500).json({ message: "Server error", error: error.message });
-//   }
-// };
 
 const createInvoice = async (req, res) => {
   try {
     const { customerName, amount, date } = req.body;
     const invoiceNumber = `INV-${Date.now()}`;
+
+    // Input validation
+    if (!customerName || !amount || !date) {
+      return res.status(400).json({
+        message: "Missing required fields",
+        required: ["customerName", "amount", "date"],
+      });
+    }
+
+    if (amount <= 0) {
+      return res.status(400).json({
+        message: "Amount must be greater than 0",
+      });
+    }
 
     const invoice = new Invoice({
       userId: req.user.userId,
@@ -78,50 +46,54 @@ const createInvoice = async (req, res) => {
       },
     });
 
-    // Generate PDF in background (don't await this)
-    generatePDFInBackground(invoice, req.user.userId);
+    // Emit initial status via WebSocket
+    const io = getIO();
+    io.to(`user_${req.user.userId}`).emit("invoiceStatusUpdate", {
+      invoiceId: invoice._id,
+      status: "processing",
+      message: "Invoice created, PDF generation queued",
+    });
+
+    // Add PDF generation job to queue
+    const job = await pdfQueue.add(
+      "generatePDF",
+      {
+        invoice: {
+          _id: invoice._id,
+          customerName: invoice.customerName,
+          amount: invoice.amount,
+          date: invoice.date,
+          invoiceNumber: invoice.invoiceNumber,
+        },
+        userId: req.user.userId,
+      },
+      {
+        priority: 1, // Normal priority
+        attempts: 3, // Retry 3 times
+      }
+    );
+
+    // Emit queue status via WebSocket
+    io.to(`user_${req.user.userId}`).emit("invoiceStatusUpdate", {
+      invoiceId: invoice._id,
+      status: "queued",
+      jobId: job.id,
+      message: `PDF generation job ${job.id} queued for processing`,
+    });
+
+    console.log(
+      `PDF generation job ${job.id} queued for invoice ${invoice._id}`
+    );
   } catch (error) {
     console.error("Error creating invoice:", error);
-    res.status(500).json({ message: "Server error", error: error.message });
-  }
-};
 
-// Separate function to handle PDF generation in background
-const generatePDFInBackground = async (invoice, userId) => {
-  try {
-    const filename = await generatePDF(invoice);
-    await Invoice.findByIdAndUpdate(invoice._id, {
-      status: "completed",
-      pdfPath: filename,
+    res.status(500).json({
+      message: "Server error",
+      error:
+        process.env.NODE_ENV === "development"
+          ? error.message
+          : "Internal server error",
     });
-
-    const io = getIO();
-    console.log("SOCKET IO : ", io); // Should now show the io object
-
-    // Emit a WebSocket event to notify the client
-    io.to(`user_${userId}`).emit("invoiceStatusUpdate", {
-      invoiceId: invoice._id,
-      status: "completed",
-      pdfPath: filename,
-    });
-
-    console.log(`PDF generated successfully for invoice ${invoice._id}`);
-  } catch (error) {
-    console.error("PDF generation failed:", error);
-
-    try {
-      await Invoice.findByIdAndUpdate(invoice._id, {
-        status: "failed",
-      });
-
-      const io = getIO();
-      io.to(`user_${userId}`).emit("invoiceStatusUpdate", {
-        invoiceId: invoice._id,
-        status: "failed",
-      });
-    } catch (updateError) {
-      console.error("Failed to update invoice status:", updateError);
-    }
   }
 };
 
