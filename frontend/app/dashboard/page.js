@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import axios from "axios";
 import { useAuth } from "@/context/AuthContext";
 import { io } from "socket.io-client";
+import Image from "next/image";
 
 export default function Dashboard() {
   const [invoices, setInvoices] = useState([]);
@@ -177,9 +178,16 @@ export default function Dashboard() {
       <nav className="bg-white shadow">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
-            <div className="flex items-center">
+            <div className="flex items-center gap-x-2">
+              <Image
+                src="/favicon.ico"
+                alt="Invoicegen Logo"
+                width={40}
+                height={40}
+                className="rounded-lg"
+              />
               <h1 className="text-xl font-semibold text-gray-900">
-                Invoice Generator
+                Invoicegen
               </h1>
             </div>
             <div className="flex items-center space-x-4">

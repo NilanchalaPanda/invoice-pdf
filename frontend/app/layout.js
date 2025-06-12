@@ -1,6 +1,7 @@
 import localFont from "next/font/local";
 import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
+import { Analytics } from "@vercel/analytics/next";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -15,7 +16,8 @@ const geistMono = localFont({
 
 export const metadata = {
   title: "Invoice App",
-  description: "An invoice management application built with Next.js and React.",
+  description:
+    "An invoice management application built with Next.js and React.",
 };
 
 export default function RootLayout({ children }) {
@@ -24,7 +26,9 @@ export default function RootLayout({ children }) {
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          {children} <Analytics />
+        </AuthProvider>
       </body>
     </html>
   );

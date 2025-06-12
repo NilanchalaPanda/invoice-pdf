@@ -1,9 +1,9 @@
 const rateLimiter = require("../utils/rateLimiter");
 
 class InMemoryRateLimiter {
-  constructor(windowMs = 60000, maxRequests = 5) {
+  constructor(windowMs = 60000, maxRequests = 2) {
     this.windowMs = windowMs; // 1 minute
-    this.maxRequests = maxRequests; // 5 requests per minute
+    this.maxRequests = maxRequests; // 2 requests per minute
     this.store = new Map(); // userId -> array of timestamps
 
     // Clean up old entries every minute
@@ -80,7 +80,7 @@ const pdfRateLimit = async (req, res, next) => {
 
     // Add rate limit headers
     res.set({
-      "X-RateLimit-Limit": "5",
+      "X-RateLimit-Limit": "2",
       "X-RateLimit-Remaining": result.remaining.toString(),
       "X-RateLimit-Reset": result.resetTime.toISOString(),
     });
